@@ -30,6 +30,11 @@ func main() {
 		panic(fmt.Sprintf("main: can't create mod_io: %v", err))
 	}
 	
+	err = os.Chdir(md.cfg.Exec_path);
+	if err != nil {
+		panic(fmt.Sprintf("main: can't change current dir: %v", err))
+	}
+	
 	go md.do_listen_for_connections()
 	
 	// waiting actions
