@@ -120,6 +120,24 @@ func (mio *Mod_io) Relay_set_state(port_num int, state int) error {
 	return fmt.Errorf("mod_io: can't set relay state")	
 }
 
+// Get output port state
+func (mio *Mod_io) Get_output_port_state(port_num int) (int, error) {
+	for cnt := 0; cnt < 3; cnt++ {
+		mio.Send_cmd("PC", "RRS", []int{port_num})
+		msg := mio.Recv("SOP", 300)
+		if msg == nil {
+			continue
+		}
+
+		if msg.Args[0] != port_num {
+			continue
+		}
+
+		return msg.Args[1], nil
+	}
+	return 0, fmt.Errorf("mod_io: can't get output state")
+}
+
 
 // Get input port state
 func (mio *Mod_io) Get_input_port_state(port_num int) (int, error) {
@@ -129,11 +147,11 @@ func (mio *Mod_io) Get_input_port_state(port_num int) (int, error) {
 		if msg == nil {
 			continue
 		}
-		
+
 		if msg.Args[0] != port_num {
 			continue
 		}
-		
+
 		return msg.Args[1], nil
 	}
 	return 0, fmt.Errorf("mod_io: can't get input state")	
@@ -148,14 +166,14 @@ func (mio *Mod_io) Wdt_set_state(state int) error {
 		if msg == nil {
 			continue
 		}
-		
+
 		if (msg.Args[0] & 1) != state {
 			continue
 		}
-		
+
 		return nil
 	}
-	return fmt.Errorf("mod_io: can't set watchdog state %d", state)	
+	return fmt.Errorf("mod_io: can't set watchdog state %d", state)
 }
 
 

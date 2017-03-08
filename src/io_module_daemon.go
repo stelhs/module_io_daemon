@@ -133,6 +133,18 @@ func (md *module_io_daemon) do_process_cmd(fd net.Conn) {
 	        }
 	        break;	
 
+        case "relay_get":
+	        println("relay_get")
+	        var port int
+	        fmt.Sscanf(args[0], "%d", &port)
+	        state, err := md.mio.Get_output_port_state(port)
+	        if err == nil {
+		        ret = fmt.Sprintf("%d", state)
+	        } else {
+	        	ret = fmt.Sprintf("%v", err)
+	        }
+	        break;	
+
         case "input_get":
 	        println("input_get")
 	        var port int
