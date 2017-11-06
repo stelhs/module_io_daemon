@@ -6,7 +6,7 @@ import (
     "github.com/BurntSushi/toml"
 )
 
-const CONFIG_FILE = "/etc/sr90_automation/module_io.conf"
+const CONFIG_FILE = "/etc/sr90_automation/usio.conf"
 
 type Module_io_cfg struct {
 	Uart_dev string
