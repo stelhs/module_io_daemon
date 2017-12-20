@@ -52,7 +52,7 @@ func main() {
 			continue
 		}
 
-		run_action_script(md.cfg.Exec_script, msg.Args[0], msg.Args[1])
+		run_action_script(md.cfg.Exec_script, msg.Args[1], msg.Args[2])
 	}
 }
 

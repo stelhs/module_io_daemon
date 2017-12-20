@@ -18,6 +18,7 @@ type Mod_io struct {
 	tx chan string
 	rx_queue *list.List
 	rx chan *nmea0183.Nmea_msg
+	rxq chan bool
 }
 
 
@@ -27,6 +28,7 @@ func New(iocfg *conf.Module_io_cfg) (*Mod_io, error) {
 	mio := new(Mod_io)
 	mio.tx = make(chan string, 16)
 	mio.rx = make(chan *nmea0183.Nmea_msg, 16)
+	mio.rxq = make(chan bool, 1)
 	mio.rx_queue = list.New()
 	
 	mio.dev, err = os.OpenFile(iocfg.Uart_dev, 
@@ -93,7 +95,8 @@ func (mio *Mod_io) Transmitter_thread() {
 }
 
 // Send nmea0183 message to transmitter
-func (mio *Mod_io) Send_cmd(ti string, si string, args []int) {
+func (mio *Mod_io) Send_cmd(request_id int, ti string, si string, args []int) {
+	args = append([]int{request_id}, args...)
 	msg := mio.nmea.Create_msg(ti, si, args)
 	mio.tx <- msg
 }
@@ -101,17 +104,17 @@ func (mio *Mod_io) Send_cmd(ti string, si string, args []int) {
 // Set outport new state 
 func (mio *Mod_io) Relay_set_state(request_id int, port_num int, state int) error {
 	for cnt := 0; cnt < 3; cnt++ {
-		mio.Send_cmd("PC", "RWS", []int{port_num, state})
+		mio.Send_cmd(request_id, "PC", "RWS", []int{port_num, state})
 		msg := mio.Recv(request_id, "SOP", 300)
 		if msg == nil {
 			continue
 		}
 		
-		if msg.Args[0] != port_num {
+		if msg.Args[1] != port_num {
 			continue
 		}
 		
-		if msg.Args[1] != state {
+		if msg.Args[2] != state {
 			continue
 		}
 		
@@ -123,18 +126,18 @@ func (mio *Mod_io) Relay_set_state(request_id int, port_num int, state int) erro
 // Get output port state
 func (mio *Mod_io) Get_output_port_state(request_id int, port_num int) (int, error) {
 	for cnt := 0; cnt < 3; cnt++ {
-		mio.Send_cmd("PC", "RRS", []int{port_num})
+		mio.Send_cmd(request_id, "PC", "RRS", []int{port_num})
 		msg := mio.Recv(request_id, "SOP", 300)
 
 		if msg == nil {
 			continue
 		}
 
-		if msg.Args[0] != port_num {
+		if msg.Args[1] != port_num {
 			continue
 		}
 
-		return msg.Args[1], nil
+		return msg.Args[2], nil
 	}
 	return 0, fmt.Errorf("mod_io: can't get output state")
 }
@@ -143,13 +146,13 @@ func (mio *Mod_io) Get_output_port_state(request_id int, port_num int) (int, err
 // Get input port state
 func (mio *Mod_io) Get_input_port_state(request_id int, port_num int) (int, error) {
 	for cnt := 0; cnt < 3; cnt++ {
-		mio.Send_cmd("PC", "RIP", []int{port_num})
+		mio.Send_cmd(request_id, "PC", "RIP", []int{port_num})
 		msg := mio.Recv(request_id, "SIP", 300)
 		if msg == nil {
 			continue
 		}
 
-		if msg.Args[0] != port_num {
+		if msg.Args[1] != port_num {
 			continue
 		}
 
@@ -162,13 +165,13 @@ func (mio *Mod_io) Get_input_port_state(request_id int, port_num int) (int, erro
 // Set WDT state
 func (mio *Mod_io) Wdt_set_state(request_id int, state int) error {
 	for cnt := 0; cnt < 3; cnt++ {
-		mio.Send_cmd("PC", "WDC", []int{state})
+		mio.Send_cmd(request_id, "PC", "WDC", []int{state})
 		msg := mio.Recv(request_id, "WDS", 300)
 		if msg == nil {
 			continue
 		}
 
-		if (msg.Args[0] & 1) != state {
+		if (msg.Args[1] & 1) != state {
 			continue
 		}
 
@@ -180,12 +183,10 @@ func (mio *Mod_io) Wdt_set_state(request_id int, state int) error {
 
 // WDT reset
 func (mio *Mod_io) Wdt_reset() {
-	mio.Send_cmd("PC", "WRS", []int{})
+	mio.Send_cmd(0, "PC", "WRS", []int{})
 }
 
-
-// Receive nmea0183 message by mask
-func (mio *Mod_io) Recv(request_id int, si string, timeout uint) *nmea0183.Nmea_msg {
+func (mio *Mod_io) recv_from_queue(request_id int, si string, timeout uint) *nmea0183.Nmea_msg {
 	mio.Lock()
 	for e := mio.rx_queue.Front(); e != nil; e = e.Next() {
 		msg, _ := e.Value.(*nmea0183.Nmea_msg)
@@ -207,6 +208,15 @@ func (mio *Mod_io) Recv(request_id int, si string, timeout uint) *nmea0183.Nmea_
 		}
 	}
 	mio.Unlock()
+	return nil
+}
+
+// Receive nmea0183 message by mask
+func (mio *Mod_io) Recv(request_id int, si string, timeout uint) *nmea0183.Nmea_msg {
+	msg := mio.recv_from_queue(request_id, si, timeout)
+	if msg != nil {
+		return msg
+	}
 
 	for {
 		var msg *nmea0183.Nmea_msg = nil 
@@ -214,6 +224,10 @@ func (mio *Mod_io) Recv(request_id int, si string, timeout uint) *nmea0183.Nmea_
 		if timeout > 0 {
 			select {
 			case msg = <- mio.rx:
+				break
+
+			case <- mio.rxq:
+				msg = mio.recv_from_queue(request_id, si, timeout)
 				break
 				
 			case <- time.After(time.Millisecond * 
@@ -239,6 +253,7 @@ func (mio *Mod_io) Recv(request_id int, si string, timeout uint) *nmea0183.Nmea_
 		mio.Lock()
 		mio.rx_queue.PushBack(msg)
 		mio.Unlock()
+		mio.rxq <- true
 	}
 
 	return nil
