@@ -13,42 +13,45 @@ import (
 type module_io_daemon struct {
 	cfg *conf.Module_io_cfg
 	mio *mod_io.Mod_io
+	last_client_id int
 }
 
 
 func main() {
 	var err error
 	var md module_io_daemon
-	 
+
+	md.last_client_id = 1
+
 	md.cfg, err = conf.Conf_parse()
     if err != nil {
         panic(fmt.Sprintf("main: can't get configuration: %v", err))
     }
-	
+
 	md.mio, err = mod_io.New(md.cfg)
 	if err != nil {
 		panic(fmt.Sprintf("main: can't create mod_io: %v", err))
 	}
-	
+
 	err = os.Chdir(md.cfg.Exec_path);
 	if err != nil {
 		panic(fmt.Sprintf("main: can't change current dir: %v", err))
 	}
-	
+
 	go md.do_listen_for_connections()
-	
+
 	// waiting actions
 	for {
-		msg := md.mio.Recv("AIP", 0)
+		msg := md.mio.Recv(0, "AIP", 0)
 		fmt.Println("recv msg = ", msg)
 		if msg == nil {
 			continue
 		}
-		
+
 		if msg.Si != "AIP" {
 			continue
 		}
-		
+
 		run_action_script(md.cfg.Exec_script, msg.Args[0], msg.Args[1])
 	}
 }
@@ -90,11 +93,12 @@ func (md *module_io_daemon) do_listen_for_connections() {
 	    	panic(fmt.Sprintf("main: can't accept new connection: %v", err))
         }
 
-        go md.do_process_cmd(fd)
+		md.last_client_id++
+        go md.do_process_cmd(fd, md.last_client_id)
     }
 }
 
-func (md *module_io_daemon) do_process_cmd(fd net.Conn) {
+func (md *module_io_daemon) do_process_cmd(fd net.Conn, client_id int) {
 	defer fd.Close()
 	
 	ret := ""
@@ -121,11 +125,10 @@ func (md *module_io_daemon) do_process_cmd(fd net.Conn) {
         cmd, args := parse_query(query)
         switch cmd {
         case "relay_set":
-	        println("relay_set")
 	        var port, new_state int
 	        fmt.Sscanf(args[0], "%d", &port)
 	        fmt.Sscanf(args[1], "%d", &new_state)
-	        err := md.mio.Relay_set_state(port, new_state)
+	        err := md.mio.Relay_set_state(client_id, port, new_state)
 	        if err == nil {
 		        ret = "ok"
 	        } else {
@@ -133,15 +136,25 @@ func (md *module_io_daemon) do_process_cmd(fd net.Conn) {
 	        }
 	        break;	
 
-        case "input_get":
-	        println("input_get")
+        case "relay_get":
 	        var port int
 	        fmt.Sscanf(args[0], "%d", &port)
-	        state, err := md.mio.Get_input_port_state(port)
+	        state, err := md.mio.Get_output_port_state(client_id, port)
 	        if err == nil {
 		        ret = fmt.Sprintf("%d", state)
 	        } else {
 	        	ret = fmt.Sprintf("%v", err)
+	        }
+	        break;	
+
+        case "input_get":
+	        var port int
+	        fmt.Sscanf(args[0], "%d", &port)
+	        state, err := md.mio.Get_input_port_state(client_id, port)
+	        if err == nil {
+                ret = fmt.Sprintf("%d", state)
+	        } else {
+                ret = fmt.Sprintf("%v", err)
 	        }
 	        break;	
 
@@ -152,7 +165,7 @@ func (md *module_io_daemon) do_process_cmd(fd net.Conn) {
 
         case "wdt_off":
 	        println("wdt_off")
-	        err := md.mio.Wdt_set_state(0)
+	        err := md.mio.Wdt_set_state(client_id, 0)
 	        if err == nil {
 		        ret = "ok"
 	        } else {
@@ -162,7 +175,7 @@ func (md *module_io_daemon) do_process_cmd(fd net.Conn) {
 
         case "wdt_on":
 	        println("wdt_on")
-	        err := md.mio.Wdt_set_state(1)
+	        err := md.mio.Wdt_set_state(client_id, 1)
 	        if err == nil {
 		        ret = "ok"
 	        } else {

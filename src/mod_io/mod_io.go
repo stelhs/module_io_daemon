@@ -99,10 +99,10 @@ func (mio *Mod_io) Send_cmd(ti string, si string, args []int) {
 }
 
 // Set outport new state 
-func (mio *Mod_io) Relay_set_state(port_num int, state int) error {
+func (mio *Mod_io) Relay_set_state(request_id int, port_num int, state int) error {
 	for cnt := 0; cnt < 3; cnt++ {
 		mio.Send_cmd("PC", "RWS", []int{port_num, state})
-		msg := mio.Recv("SOP", 300)
+		msg := mio.Recv(request_id, "SOP", 300)
 		if msg == nil {
 			continue
 		}
@@ -120,20 +120,38 @@ func (mio *Mod_io) Relay_set_state(port_num int, state int) error {
 	return fmt.Errorf("mod_io: can't set relay state")	
 }
 
-
-// Get input port state
-func (mio *Mod_io) Get_input_port_state(port_num int) (int, error) {
+// Get output port state
+func (mio *Mod_io) Get_output_port_state(request_id int, port_num int) (int, error) {
 	for cnt := 0; cnt < 3; cnt++ {
-		mio.Send_cmd("PC", "RIP", []int{port_num})
-		msg := mio.Recv("SIP", 300)
+		mio.Send_cmd("PC", "RRS", []int{port_num})
+		msg := mio.Recv(request_id, "SOP", 300)
 		if msg == nil {
 			continue
 		}
-		
+
 		if msg.Args[0] != port_num {
 			continue
 		}
-		
+
+		return msg.Args[1], nil
+	}
+	return 0, fmt.Errorf("mod_io: can't get output state")
+}
+
+
+// Get input port state
+func (mio *Mod_io) Get_input_port_state(request_id int, port_num int) (int, error) {
+	for cnt := 0; cnt < 3; cnt++ {
+		mio.Send_cmd("PC", "RIP", []int{port_num})
+		msg := mio.Recv(request_id, "SIP", 300)
+		if msg == nil {
+			continue
+		}
+
+		if msg.Args[0] != port_num {
+			continue
+		}
+
 		return msg.Args[1], nil
 	}
 	return 0, fmt.Errorf("mod_io: can't get input state")	
@@ -141,21 +159,21 @@ func (mio *Mod_io) Get_input_port_state(port_num int) (int, error) {
 
 
 // Set WDT state
-func (mio *Mod_io) Wdt_set_state(state int) error {
+func (mio *Mod_io) Wdt_set_state(request_id int, state int) error {
 	for cnt := 0; cnt < 3; cnt++ {
 		mio.Send_cmd("PC", "WDC", []int{state})
-		msg := mio.Recv("WDS", 300)
+		msg := mio.Recv(request_id, "WDS", 300)
 		if msg == nil {
 			continue
 		}
-		
+
 		if (msg.Args[0] & 1) != state {
 			continue
 		}
-		
+
 		return nil
 	}
-	return fmt.Errorf("mod_io: can't set watchdog state %d", state)	
+	return fmt.Errorf("mod_io: can't set watchdog state %d", state)
 }
 
 
@@ -166,17 +184,21 @@ func (mio *Mod_io) Wdt_reset() {
 
 
 // Receive nmea0183 message by mask
-func (mio *Mod_io) Recv(si string, timeout uint) *nmea0183.Nmea_msg {
+func (mio *Mod_io) Recv(request_id int, si string, timeout uint) *nmea0183.Nmea_msg {
 	mio.Lock()
 	for e := mio.rx_queue.Front(); e != nil; e = e.Next() {
 		msg, _ := e.Value.(*nmea0183.Nmea_msg)
-		
+
+		if msg.Request_id != request_id {
+			continue
+		}
+
 		if len(si) == 0 {
 			mio.rx_queue.Remove(e)
 			mio.Unlock()
 			return msg
 		}
-		
+
 		if msg.Si == si {
 			mio.rx_queue.Remove(e)
 			mio.Unlock()
@@ -200,19 +222,19 @@ func (mio *Mod_io) Recv(si string, timeout uint) *nmea0183.Nmea_msg {
 		} else {
 			msg = <- mio.rx
 		}
-		
+
 		if msg == nil {
 			return nil
 		}
-		
-		if len(si) == 0 {
+
+		if len(si) == 0 && msg.Request_id == request_id {
 			return msg
 		}
 
-		if msg.Si == si {
+		if msg.Si == si && msg.Request_id == request_id {
 			return msg
 		}
-		
+
 		mio.Lock()
 		mio.rx_queue.PushBack(msg)
 		mio.Unlock()

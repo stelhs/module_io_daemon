@@ -14,6 +14,7 @@ type Nmea0183 struct {
 type Nmea_msg struct {
 	Ti string
 	Si string
+	Request_id int
 	Args []int
 }
 
@@ -64,6 +65,7 @@ func (t *Nmea0183) parse() *Nmea_msg {
     	msg.Args = append(msg.Args, arg)
     }
     
+    msg.Request_id = msg.Args[0]
 	return &msg
 }
 
