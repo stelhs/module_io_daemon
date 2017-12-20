@@ -125,6 +125,7 @@ func (mio *Mod_io) Get_output_port_state(request_id int, port_num int) (int, err
 	for cnt := 0; cnt < 3; cnt++ {
 		mio.Send_cmd("PC", "RRS", []int{port_num})
 		msg := mio.Recv(request_id, "SOP", 300)
+
 		if msg == nil {
 			continue
 		}
