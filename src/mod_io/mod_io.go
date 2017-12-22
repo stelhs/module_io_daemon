@@ -28,7 +28,7 @@ func New(iocfg *conf.Module_io_cfg) (*Mod_io, error) {
 	mio := new(Mod_io)
 	mio.tx = make(chan string, 16)
 	mio.rx = make(chan *nmea0183.Nmea_msg, 16)
-	mio.rxq = make(chan bool, 1)
+	mio.rxq = make(chan bool, 32)
 	mio.rx_queue = list.New()
 	
 	mio.dev, err = os.OpenFile(iocfg.Uart_dev, 
@@ -156,7 +156,7 @@ func (mio *Mod_io) Get_input_port_state(request_id int, port_num int) (int, erro
 			continue
 		}
 
-		return msg.Args[1], nil
+		return msg.Args[2], nil
 	}
 	return 0, fmt.Errorf("mod_io: can't get input state")	
 }
