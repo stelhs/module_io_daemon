@@ -94,6 +94,9 @@ func (md *module_io_daemon) do_listen_for_connections() {
         }
 
 		md.last_client_id++
+		if md.last_client_id > 255 {
+			md.last_client_id = 1
+		}
         go md.do_process_cmd(fd, md.last_client_id)
     }
 }
