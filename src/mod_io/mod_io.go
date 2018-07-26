@@ -17,8 +17,7 @@ type Mod_io struct {
 	dev *os.File
 	tx chan string
 	rx_queue *list.List
-	rx chan *nmea0183.Nmea_msg
-	rxq chan bool
+    rx_flag chan bool
 }
 
 
@@ -27,8 +26,7 @@ func New(iocfg *conf.Module_io_cfg) (*Mod_io, error) {
 	
 	mio := new(Mod_io)
 	mio.tx = make(chan string, 64)
-	mio.rx = make(chan *nmea0183.Nmea_msg, 64)
-	mio.rxq = make(chan bool, 64)
+	mio.rx_flag = make(chan bool, 64)
 	mio.rx_queue = list.New()
 	
 	mio.dev, err = os.OpenFile(iocfg.Uart_dev, 
@@ -72,7 +70,10 @@ func (mio *Mod_io) Receiver_thread() {
 				continue	
 			}
 
-			mio.rx <- msg
+            mio.Lock()
+            mio.rx_queue.PushBack(msg)
+            mio.Unlock()
+            mio.rx_flag <- true
 		}
 	}
 }
@@ -186,7 +187,7 @@ func (mio *Mod_io) Wdt_reset() {
 	mio.Send_cmd(0, "PC", "WRS", []int{})
 }
 
-func (mio *Mod_io) recv_from_queue(request_id int, si string, timeout uint) *nmea0183.Nmea_msg {
+func (mio *Mod_io) recv_from_queue(request_id int, si string) *nmea0183.Nmea_msg {
 	mio.Lock()
 	for e := mio.rx_queue.Front(); e != nil; e = e.Next() {
 		msg, _ := e.Value.(*nmea0183.Nmea_msg)
@@ -211,51 +212,39 @@ func (mio *Mod_io) recv_from_queue(request_id int, si string, timeout uint) *nme
 	return nil
 }
 
+
 // Receive nmea0183 message by mask
 func (mio *Mod_io) Recv(request_id int, si string, timeout uint) *nmea0183.Nmea_msg {
-	msg := mio.recv_from_queue(request_id, si, timeout)
+	msg := mio.recv_from_queue(request_id, si)
 	if msg != nil {
 		return msg
 	}
 
+    if timeout == 0 {
+        for {
+            <- mio.rx_flag
+            msg = mio.recv_from_queue(request_id, si)
+            if msg == nil {
+                continue
+            }
+            return msg
+        }
+    }
+
 	for {
-		var msg *nmea0183.Nmea_msg = nil 
-		
-		if timeout > 0 {
-			select {
-			case msg = <- mio.rx:
-				break
+		select {
+		case <- mio.rx_flag:
+            msg = mio.recv_from_queue(request_id, si)
+            if msg == nil {
+                continue
+            }
+			return msg
 
-			case <- mio.rxq:
-				msg = mio.recv_from_queue(request_id, si, timeout)
-				break
-
-			case <- time.After(time.Millisecond * 
-								time.Duration(timeout)):
-				return nil
-			}
-		} else {
-			msg = <- mio.rx
-		}
-
-		if msg == nil {
+		case <- time.After(time.Millisecond * 
+							time.Duration(timeout)):
 			return nil
 		}
-
-		if len(si) == 0 && msg.Request_id == request_id {
-			return msg
-		}
-
-		if msg.Si == si && msg.Request_id == request_id {
-			return msg
-		}
-
-		mio.Lock()
-		mio.rx_queue.PushBack(msg)
-		mio.Unlock()
-		mio.rxq <- true
 	}
 
 	return nil
 }
-
