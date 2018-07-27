@@ -106,7 +106,7 @@ func (mio *Mod_io) Send_cmd(request_id int, ti string, si string, args []int) {
 func (mio *Mod_io) Relay_set_state(request_id int, port_num int, state int) error {
 	for cnt := 0; cnt < 3; cnt++ {
 		mio.Send_cmd(request_id, "PC", "RWS", []int{port_num, state})
-		msg := mio.Recv(request_id, "SOP", 300)
+		msg := mio.Recv(request_id, "SOP", 500)
 		if msg == nil {
 			continue
 		}
@@ -128,7 +128,7 @@ func (mio *Mod_io) Relay_set_state(request_id int, port_num int, state int) erro
 func (mio *Mod_io) Get_output_port_state(request_id int, port_num int) (int, error) {
 	for cnt := 0; cnt < 3; cnt++ {
 		mio.Send_cmd(request_id, "PC", "RRS", []int{port_num})
-		msg := mio.Recv(request_id, "SOP", 300)
+		msg := mio.Recv(request_id, "SOP", 500)
 
 		if msg == nil {
 			continue
@@ -148,7 +148,7 @@ func (mio *Mod_io) Get_output_port_state(request_id int, port_num int) (int, err
 func (mio *Mod_io) Get_input_port_state(request_id int, port_num int) (int, error) {
 	for cnt := 0; cnt < 3; cnt++ {
 		mio.Send_cmd(request_id, "PC", "RIP", []int{port_num})
-		msg := mio.Recv(request_id, "SIP", 300)
+		msg := mio.Recv(request_id, "SIP", 500)
 		if msg == nil {
 			continue
 		}
@@ -167,7 +167,7 @@ func (mio *Mod_io) Get_input_port_state(request_id int, port_num int) (int, erro
 func (mio *Mod_io) Wdt_set_state(request_id int, state int) error {
 	for cnt := 0; cnt < 3; cnt++ {
 		mio.Send_cmd(request_id, "PC", "WDC", []int{state})
-		msg := mio.Recv(request_id, "WDS", 300)
+		msg := mio.Recv(request_id, "WDS", 500)
 		if msg == nil {
 			continue
 		}
