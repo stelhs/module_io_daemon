@@ -17,7 +17,7 @@ type Mod_io struct {
 	dev *os.File
 	tx chan string
 	rx_queue *list.List
-    rx_flag chan bool
+	rx_recepient_channels *list.List
 }
 
 
@@ -26,8 +26,8 @@ func New(iocfg *conf.Module_io_cfg) (*Mod_io, error) {
 	
 	mio := new(Mod_io)
 	mio.tx = make(chan string, 64)
-	mio.rx_flag = make(chan bool, 64)
 	mio.rx_queue = list.New()
+	mio.rx_recepient_channels = list.New()
 	
 	mio.dev, err = os.OpenFile(iocfg.Uart_dev, 
 						os.O_RDWR | os.O_APPEND, 0660)
@@ -70,10 +70,16 @@ func (mio *Mod_io) Receiver_thread() {
 				continue	
 			}
 
-            mio.Lock()
-            mio.rx_queue.PushBack(msg)
-            mio.Unlock()
-            mio.rx_flag <- true
+			mio.Lock()
+			mio.rx_queue.PushBack(msg)
+
+			for e := mio.rx_recepient_channels.Front(); e != nil; e = e.Next() {
+				chain, _ := e.Value.(chan bool)
+				chain <- true
+			}
+			mio.Unlock()
+
+
 		}
 	}
 }
@@ -97,6 +103,18 @@ func (mio *Mod_io) Transmitter_thread() {
 
 // Send nmea0183 message to transmitter
 func (mio *Mod_io) Send_cmd(request_id int, ti string, si string, args []int) {
+	// Remove incomming packet with request_id from rx_queue
+	mio.Lock()
+	for e := mio.rx_queue.Front(); e != nil; e = e.Next() {
+		msg, _ := e.Value.(*nmea0183.Nmea_msg)
+
+		if msg.Request_id == request_id {
+			println(fmt.Sprintf("find request_id: %d", msg.Request_id))
+			mio.rx_queue.Remove(e)
+		}
+	}
+	mio.Unlock()
+
 	args = append([]int{request_id}, args...)
 	msg := mio.nmea.Create_msg(ti, si, args)
 	mio.tx <- msg
@@ -220,28 +238,42 @@ func (mio *Mod_io) Recv(request_id int, si string, timeout uint) *nmea0183.Nmea_
 		return msg
 	}
 
-    if timeout == 0 {
-        for {
-            <- mio.rx_flag
-            msg = mio.recv_from_queue(request_id, si)
-            if msg == nil {
-                continue
-            }
-            return msg
-        }
-    }
+	rx_flag := make(chan bool, 1)
+	mio.Lock()
+	rx_flag_queue_item := mio.rx_recepient_channels.PushBack(rx_flag)
+	mio.Unlock()
+
+	if timeout == 0 {
+		for {
+			<- rx_flag
+			msg = mio.recv_from_queue(request_id, si)
+			if msg == nil {
+				continue
+			}
+			mio.Lock()
+			mio.rx_recepient_channels.Remove(rx_flag_queue_item)
+			mio.Unlock()
+			return msg
+		}
+	}
 
 	for {
 		select {
-		case <- mio.rx_flag:
-            msg = mio.recv_from_queue(request_id, si)
-            if msg == nil {
-                continue
-            }
+		case <- rx_flag:
+			msg = mio.recv_from_queue(request_id, si)
+			if msg == nil {
+				continue
+			}
+			mio.Lock()
+			mio.rx_recepient_channels.Remove(rx_flag_queue_item)
+			mio.Unlock()
 			return msg
 
 		case <- time.After(time.Millisecond * 
 							time.Duration(timeout)):
+			mio.Lock()
+			mio.rx_recepient_channels.Remove(rx_flag_queue_item)
+			mio.Unlock()
 			return nil
 		}
 	}
