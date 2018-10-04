@@ -42,23 +42,25 @@ func main() {
 
 	// waiting actions
 	for {
-		msg := md.mio.Recv(0, "AIP", 0)
+		msg := md.mio.Recv(0, []string{"AIP", "ASP"}, 0)
 		fmt.Println("recv msg = ", msg)
 		if msg == nil {
-			continue
+            continue
+        }
+
+        if msg.Si == "AIP" {
+            run_action_script(md.cfg.Exec_script, "io_input", msg.Args[1], msg.Args[2])
 		}
 
-		if msg.Si != "AIP" {
-			continue
-		}
-
-		run_action_script(md.cfg.Exec_script, msg.Args[1], msg.Args[2])
+        if msg.Si == "ASP" {
+            run_action_script(md.cfg.Exec_script, "restart", 0, 0)
+        }
 	}
 }
 
 
-func run_action_script(script string, port int, state int) {
-    p := exec.Command(script, 
+func run_action_script(script string, action string, port int, state int) {
+    p := exec.Command(script, fmt.Sprintf("%s", action),
 						       fmt.Sprintf("%d", port),
 							   fmt.Sprintf("%d", state))
 

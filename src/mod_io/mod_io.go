@@ -124,7 +124,7 @@ func (mio *Mod_io) Send_cmd(request_id int, ti string, si string, args []int) {
 func (mio *Mod_io) Relay_set_state(request_id int, port_num int, state int) error {
 	for cnt := 0; cnt < 3; cnt++ {
 		mio.Send_cmd(request_id, "PC", "RWS", []int{port_num, state})
-		msg := mio.Recv(request_id, "SOP", 500)
+		msg := mio.Recv(request_id, []string{"SOP"}, 500)
 		if msg == nil {
 			continue
 		}
@@ -146,7 +146,7 @@ func (mio *Mod_io) Relay_set_state(request_id int, port_num int, state int) erro
 func (mio *Mod_io) Get_output_port_state(request_id int, port_num int) (int, error) {
 	for cnt := 0; cnt < 3; cnt++ {
 		mio.Send_cmd(request_id, "PC", "RRS", []int{port_num})
-		msg := mio.Recv(request_id, "SOP", 500)
+		msg := mio.Recv(request_id, []string{"SOP"}, 500)
 
 		if msg == nil {
 			continue
@@ -166,7 +166,7 @@ func (mio *Mod_io) Get_output_port_state(request_id int, port_num int) (int, err
 func (mio *Mod_io) Get_input_port_state(request_id int, port_num int) (int, error) {
 	for cnt := 0; cnt < 3; cnt++ {
 		mio.Send_cmd(request_id, "PC", "RIP", []int{port_num})
-		msg := mio.Recv(request_id, "SIP", 500)
+		msg := mio.Recv(request_id, []string{"SIP"}, 500)
 		if msg == nil {
 			continue
 		}
@@ -185,7 +185,7 @@ func (mio *Mod_io) Get_input_port_state(request_id int, port_num int) (int, erro
 func (mio *Mod_io) Wdt_set_state(request_id int, state int) error {
 	for cnt := 0; cnt < 3; cnt++ {
 		mio.Send_cmd(request_id, "PC", "WDC", []int{state})
-		msg := mio.Recv(request_id, "WDS", 500)
+		msg := mio.Recv(request_id, []string{"WDS"}, 500)
 		if msg == nil {
 			continue
 		}
@@ -232,8 +232,15 @@ func (mio *Mod_io) recv_from_queue(request_id int, si string) *nmea0183.Nmea_msg
 
 
 // Receive nmea0183 message by mask
-func (mio *Mod_io) Recv(request_id int, si string, timeout uint) *nmea0183.Nmea_msg {
-	msg := mio.recv_from_queue(request_id, si)
+func (mio *Mod_io) Recv(request_id int, si_list []string, timeout uint) *nmea0183.Nmea_msg {
+    var msg *nmea0183.Nmea_msg
+    for _, si := range si_list {
+        msg = mio.recv_from_queue(request_id, si)
+        if msg == nil {
+            continue
+        }
+        break
+    }
 	if msg != nil {
 		return msg
 	}
@@ -246,10 +253,18 @@ func (mio *Mod_io) Recv(request_id int, si string, timeout uint) *nmea0183.Nmea_
 	if timeout == 0 {
 		for {
 			<- rx_flag
-			msg = mio.recv_from_queue(request_id, si)
-			if msg == nil {
-				continue
-			}
+            for _, si := range si_list {
+                msg = mio.recv_from_queue(request_id, si)
+                if msg == nil {
+                    continue
+                }
+                break
+            }
+
+            if msg == nil {
+                continue
+            }
+
 			mio.Lock()
 			mio.rx_recepient_channels.Remove(rx_flag_queue_item)
 			mio.Unlock()
@@ -260,7 +275,13 @@ func (mio *Mod_io) Recv(request_id int, si string, timeout uint) *nmea0183.Nmea_
 	for {
 		select {
 		case <- rx_flag:
-			msg = mio.recv_from_queue(request_id, si)
+            for _, si := range si_list {
+                msg = mio.recv_from_queue(request_id, si)
+                if msg == nil {
+                    continue
+                }
+                break
+            }
 			if msg == nil {
 				continue
 			}
