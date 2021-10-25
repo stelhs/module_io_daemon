@@ -1,13 +1,15 @@
-package main 
+package main
 
 import (
 	"fmt"
 	"mod_io"
     "conf"
     "os"
-    "os/exec"
+//    "os/exec"
     "strings"
     "net"
+//    "io/ioutil"
+    "net/http"
 )
 
 type module_io_daemon struct {
@@ -49,16 +51,19 @@ func main() {
         }
 
         if msg.Si == "AIP" {
-            run_action_script(md.cfg.Exec_script, "io_input", msg.Args[1], msg.Args[2])
+            http.Get(fmt.Sprintf(
+                     "http://localhost:400/ioserver?io=usio1&port=%d&state=%d",
+                     msg.Args[1], msg.Args[2]))
+            //run_action_script(md.cfg.Exec_script, "io_input", msg.Args[1], msg.Args[2])
 		}
 
-        if msg.Si == "ASP" {
-            run_action_script(md.cfg.Exec_script, "restart", 0, 0)
-        }
+      /*  if msg.Si == "ASP" {
+           // run_action_script(md.cfg.Exec_script, "restart", 0, 0)
+        }*/
 	}
 }
 
-
+/*
 func run_action_script(script string, action string, port int, state int) {
     p := exec.Command(script, fmt.Sprintf("%s", action),
 						       fmt.Sprintf("%d", port),
@@ -73,19 +78,19 @@ func run_action_script(script string, action string, port int, state int) {
     p.Stdout = os.Stdout
     p.Stderr = os.Stderr
 
-    if err = p.Start(); err != nil { 
+    if err = p.Start(); err != nil {
     	panic(fmt.Sprintf("main: can't run script: %s: %v", script, err))
     }
 
     p.Wait()
 }
-
+*/
 
 func (md *module_io_daemon) do_listen_for_connections() {
 	os.Remove(md.cfg.Control_socket)
     l, err := net.Listen("unix", md.cfg.Control_socket)
     if err != nil {
-    	panic(fmt.Sprintf("main: can't listen socket: %s: %v", 
+    	panic(fmt.Sprintf("main: can't listen socket: %s: %v",
 			    			md.cfg.Control_socket, err))
     }
 
@@ -105,7 +110,7 @@ func (md *module_io_daemon) do_listen_for_connections() {
 
 func (md *module_io_daemon) do_process_cmd(fd net.Conn, client_id int) {
 	defer fd.Close()
-	
+
 	ret := ""
     buf := make([]byte, 512)
     nr, err := fd.Read(buf)
@@ -124,7 +129,7 @@ func (md *module_io_daemon) do_process_cmd(fd net.Conn, client_id int) {
         if query == "" {
         	continue
         }
-        
+
         // split query by args
         println("query = ", query)
         cmd, args := parse_query(query)
@@ -139,7 +144,7 @@ func (md *module_io_daemon) do_process_cmd(fd net.Conn, client_id int) {
 	        } else {
 	        	ret = fmt.Sprintf("%v", err)
 	        }
-	        break;	
+	        break;
 
         case "relay_get":
 	        var port int
@@ -150,7 +155,7 @@ func (md *module_io_daemon) do_process_cmd(fd net.Conn, client_id int) {
 	        } else {
 	        	ret = fmt.Sprintf("%v", err)
 	        }
-	        break;	
+	        break;
 
         case "input_get":
 	        var port int
@@ -161,12 +166,12 @@ func (md *module_io_daemon) do_process_cmd(fd net.Conn, client_id int) {
 	        } else {
                 ret = fmt.Sprintf("%v", err)
 	        }
-	        break;	
+	        break;
 
         case "wdt_reset":
 	        println("wdt_reset")
 	        md.mio.Wdt_reset()
-	        break;	
+	        break;
 
         case "wdt_off":
 	        println("wdt_off")
@@ -176,7 +181,7 @@ func (md *module_io_daemon) do_process_cmd(fd net.Conn, client_id int) {
 	        } else {
 	        	ret = fmt.Sprintf("%v", err)
 	        }
-	        break;	
+	        break;
 
         case "wdt_on":
 	        println("wdt_on")
@@ -186,7 +191,7 @@ func (md *module_io_daemon) do_process_cmd(fd net.Conn, client_id int) {
 	        } else {
 	        	ret = fmt.Sprintf("%v", err)
 	        }
-	        break;	
+	        break;
         }
         fd.Write([]byte(ret))
 	}
@@ -203,16 +208,16 @@ func parse_query(query string) (string, []string) {
 	    if arg == "" {
 	    	continue
 	    }
-    
+
 	    if first {
 	    	cmd = arg
 	    	first = false
 	    	continue
 	    }
-	    
+
 	    args = append(args, arg)
 	}
-	
+
 	return cmd, args
 }
 
